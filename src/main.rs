@@ -92,6 +92,16 @@ fn state_to_output(state: [[u8; 4]; 4]) -> [u8; 16] {
     return output;
 }
 
+fn invert_state(state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    let mut transposed: [[u8; 4]; 4] = [[0; 4]; 4];
+    for i in 0..4 {
+        for j in 0..4 {
+            transposed[j][i] = state[i][j];
+        }
+    }
+    return transposed;
+}
+
 fn xor(a: [u8; 4], b: [u8; 4]) -> [u8; 4] {
     let mut byte_xor: [u8; 4] = [0; 4];
     for i in 0..4 {
@@ -106,36 +116,34 @@ KEY EXPANSION
 
 fn sub_word(mut word: [u8; 4]) -> [u8; 4] {
     for i in 0..4 {
-        println!("\nInitital\n{:#X}", word[i]);
+        //println!("\nInitital\n{:#X}", word[i]);
         word[i] = S_BOX[word[i] as usize];
-        println!("S_BOXED\n{:#X}", word[i]);
+        //println!("S_BOXED\n{:#X}", word[i]);
     }
     return word;
 }
 
 fn rot_word(mut word: [u8; 4]) -> [u8; 4] {
-    let mut init_word: [u8; 4] = [0; 4];
-    init_word = word;
+    let mut saved_byte: u8 = 0;
+    saved_byte = word[0];
     for i in 1..4 {
         word[i-1] = word[i];
     }
-    word[3] = init_word[0];
+    word[3] = saved_byte;
     return word;
 }
 
 fn key_expansion(key: [u8; 16], key_length: usize) -> [[[u8; 4]; 4]; 11] {
     let mut key_arr: [[u8; 4]; 4] = [[0; 4]; 4];
     key_arr = input_to_state(key);
-    println!("key array:\n{:#?}", key_arr);
+    //println!("key array:\n{:#?}", key_arr);
     let mut init_key_schedule: [[u8; 4]; 44] = [[0; 4]; 44]; 
     let mut key_schedule:[[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
     for i in 0..4 {
         init_key_schedule[i] = key_arr[i];
     }
     
-
     let mut temp: [u8; 4];
- 
     for i in key_length.. 4 * (NUMBER_OF_ROUNDS["4"] + 1) {
         temp = init_key_schedule[i-1];
         
@@ -148,7 +156,7 @@ fn key_expansion(key: [u8; 16], key_length: usize) -> [[[u8; 4]; 4]; 11] {
         
         init_key_schedule[i] = xor(init_key_schedule[i-key_length], temp);
     }
-    println!("44x4 key schedule:\n{:#X?}", init_key_schedule);
+    //println!("44x4 key schedule:\n{:#X?}", init_key_schedule);
     for i in 0..NUMBER_OF_ROUNDS["4"] + 1 {
         for j in 0..4 {
             for k in 0..4 {
@@ -170,37 +178,164 @@ fn add_round_key (mut state: [[u8; 4]; 4], round_key: [[u8; 4]; 4]) -> [[u8; 4];
     return state;
 }
 
-fn sub_bytes(state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+fn sub_bytes(mut state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    for i in 0..4 {
+        for j in 0..4 {
+            state[i][j] = S_BOX[state[i][j] as usize];
+        }
+    }
+    return state;
+}
+
+fn inv_sub_bytes(mut state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    for i in 0..4 {
+        for j in 0..4 {
+            state[i][j] = INV_S_BOX[state[i][j] as usize];
+        }
+    }
     return state;
 }
 
 fn shift_rows(state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    let mut permutated: [[u8; 4]; 4] = [[0; 4]; 4];
+    permutated = state;
+    permutated[0][1] = state[1][1];
+    permutated[1][1] = state[2][1];
+    permutated[2][1] = state[3][1];
+    permutated[3][1] = state[0][1];
+    permutated[0][2] = state[2][2];
+    permutated[1][2] = state[3][2];
+    permutated[2][2] = state[0][2];
+    permutated[3][2] = state[1][2];
+    permutated[0][3] = state[3][3];
+    permutated[1][3] = state[0][3];
+    permutated[2][3] = state[1][3];
+    permutated[3][3] = state[2][3];
+    return permutated;
+}
+
+fn inv_shift_rows(state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    let mut permutated: [[u8; 4]; 4] = [[0; 4]; 4];
+    permutated = state;
+    permutated[0][1] = state[3][1];
+    permutated[1][1] = state[0][1];
+    permutated[2][1] = state[1][1];
+    permutated[3][1] = state[2][1];
+    permutated[0][2] = state[2][2];
+    permutated[1][2] = state[3][2];
+    permutated[2][2] = state[0][2];
+    permutated[3][2] = state[1][2];
+    permutated[0][3] = state[1][3];
+    permutated[1][3] = state[2][3];
+    permutated[2][3] = state[3][3];
+    permutated[3][3] = state[0][3];
+    return permutated;
+}
+
+//xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1);
+fn xtime(x: u8) -> u8 {
+    let mut result: u8 = 0;
+    if x & 0x80 != 0 {
+        result = ((x << 1) ^ 0x1B) & 0xFF;
+    }
+    else {
+        result = x << 1;
+    }
+    return result;
+}
+
+fn mix_single_column(mut column: [u8; 4]) -> [u8; 4] {
+    let mut t: u8 = 0;
+    let mut u: u8 = 0;
+    t = column[0] ^ column[1] ^ column[2] ^ column[3];
+    u = column[0];
+    column[0] ^= t ^ xtime(column[0] ^ column[1]);
+    column[1] ^= t ^ xtime(column[1] ^ column[2]);
+    column[2] ^= t ^ xtime(column[2] ^ column[3]);
+    column[3] ^= t ^ xtime(column[3] ^ u);
+    return column;
+}
+
+fn mix_columns(mut state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    for i in 0..4 {
+        state[i] = mix_single_column(state[i]);
+    }   
     return state;
 }
 
-fn mix_columns(state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+fn inv_mix_columns(mut state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
+    let mut u: u8 = 0;
+    let mut v: u8 = 0;
+    for i in 0..4 {
+        u = xtime(xtime(state[i][0] ^ state[i][2]));
+        v = xtime(xtime(state[i][1] ^ state[i][3]));
+        state[i][0] ^= u;
+        state[i][1] ^= v;
+        state[i][2] ^= u;
+        state[i][3] ^= v;
+    }
+    state = mix_columns(state);
     return state;
 }
-/*
-fn cipher_block(input: [u8; 16], rounds: usize) -> [u8; 16] {
+
+fn cipher_block(input: [u8; 16], key: [u8; 16], rounds: usize) -> [u8; 16] {
     let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
     state = input_to_state(input);
-    let mut key_schedule: [u32; 11] = [0; 11];
-    key_schedule = key_expansion();
+    let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+    key_schedule = key_expansion(key, 4);
 
-    add_round_key(state, key_schedule[0]);
+    state = add_round_key(state, key_schedule[0]);
+    
+    //println!("round: 0");
+    //println!("state:\n{:#X?}", state);
 
-    for round in 1..rounds-1 {
-        sub_bytes(state);
-        shift_rows(state);
-        mix_columns(state);
-        add_round_key(state,key_schedule[round]);
+    for round in 1..rounds {
+        state = sub_bytes(state);
+        state = shift_rows(state);
+        state = mix_columns(state);
+        state = add_round_key(state,key_schedule[round]);
+        //println!("round:{:#?}", round);
+        //println!("state:\n{:#X?}", state);
     }
+    state = sub_bytes(state);
+    state = shift_rows(state);
+    state = add_round_key(state,key_schedule[rounds]);
+
+    //println!("round: 10");
+    //println!("state:\n{:#X?}", state);
 
     let output: [u8; 16] = state_to_output(state);
     return output;
 }
-*/
+
+fn inv_cipher_block(input: [u8; 16], key: [u8; 16], rounds: usize) -> [u8; 16] {
+    let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
+    state = input_to_state(input);
+    let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+    key_schedule = key_expansion(key, 4);
+
+    state = add_round_key(state, key_schedule[10]);
+
+    println!("round: 0");
+    println!("state:\n{:#X?}", state);
+    for round in 1..rounds {
+        state = inv_shift_rows(state);
+        state = inv_sub_bytes(state);
+        state = add_round_key(state,key_schedule[rounds - round]);
+        state = inv_mix_columns(state);
+        println!("round:{:#?}", round);
+        println!("state:\n{:#X?}", state);
+    }
+
+    state = inv_shift_rows(state);
+    state = inv_sub_bytes(state);
+    state = add_round_key(state,key_schedule[0]);
+    println!("round: 10");
+    println!("state:\n{:#X?}", state);
+    let output: [u8; 16] = state_to_output(state);
+    return output;
+}
+
 
 fn main() {
     
@@ -211,25 +346,41 @@ fn main() {
     //output = state_to_output(state);
     println!("input:\n{:#?}", input);
     println!("state:\n{:#?}", state);
-    //println!("output:\n{:#?}", output);
+    let mut output: [u8; 16] = [0; 16];
+
+    let mut key: [u8; 16] = [0; 16];
+    //let mut key_schedule:[[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+
+    //key_schedule = key_expansion(key, 4);
+
+    //println!("key schedule:\n{:#X?}", key_schedule);
+
+    output = cipher_block(input, key, 10);
     
+    println!("Encrypted:\n{:#X?}", output);
+    
+    output = inv_cipher_block(output, key, 10);
+    println!("Decrypted:\n{:#X?}", output);
+
     //let a: [u8; 4] = [1, 2, 3, 4];
     //let b: [u8; 4] = [4, 3, 2, 1];
     
 
-    let mut key: [u8; 16] = [0x1d, 0xa1, 0xcf, 0xc8, 0x0c, 0xa4, 0xe4, 0xba, 0x9f, 0x33, 0x25, 0x55, 0xcf, 0xfa, 0x1d, 0xc2];
+    //let mut key: [u8; 16] = [0x1d, 0xa1, 0xcf, 0xc8, 0x0c, 0xa4, 0xe4, 0xba, 0x9f, 0x33, 0x25, 0x55, 0xcf, 0xfa, 0x1d, 0xc2];
     
-    let mut key_schedule:[[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+    /*
+    state = sub_bytes(state);
+    println!("SubBytes:\n{:#X?}", state);
 
-    key_schedule = key_expansion(key, 4);
+    state = shift_rows(state);
+    println!("ShiftRows:\n{:#X?}", state);
 
-    println!("key schedule:\n{:#X?}", key_schedule);
-    
-    let mut cipher: [[u8; 4]; 4] = [[0; 4]; 4];
+    state = mix_columns(state);
+    println!("MixColumns:\n{:#X?}", state);
 
-    cipher = add_round_key(state, key_schedule[1]);
-
-    println!("ciphere:\n{:#X?}", cipher);
+    state = add_round_key(state, key_schedule[1]);
+    println!("Added key to state:\n{:#X?}", state);
+    */
     /*
     let mut xor_arr: [u8; 4] = [0; 4];
 
