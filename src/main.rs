@@ -1,4 +1,3 @@
-#[allow(unused_assignments)]
 use rand;
 use std::str;
 use std::process;
