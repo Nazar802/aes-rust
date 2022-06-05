@@ -1,4 +1,5 @@
 all: build
 
 build:
-	cargo build --bin aes
+	cargo build --release --bin aes
+	

@@ -9,6 +9,11 @@ edition = "2021"
 phf = { version = "0.8.0", features = [ "macros" ] }
 rand = {features = ["std"]}
 
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
 
 [[bin]]
 edition = "2021"
