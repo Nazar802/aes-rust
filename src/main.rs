@@ -298,11 +298,15 @@ fn cipher_block(input: [u8; 16], key_schedule: Vec<[[u8; 4]; 4]>, rounds: usize)
 
     for round in 1..rounds {
         state = sub_bytes(state);
+        //println!("state after sub_bytes:\n{:#X?}", state);
         state = shift_rows(state);
+        //println!("state after shift_rows:\n{:#X?}", state);
         state = mix_columns(state);
+        //println!("state after mix_columns:\n{:#X?}", state);
         state = add_round_key(state,key_schedule[round]);
         //println!("round:{:#?}", round);
-        //println!("state:\n{:#X?}", state);
+        //println!("state after add_round_key:\n{:#X?}", state);
+        //break;
     }
     state = sub_bytes(state);
     state = shift_rows(state);
@@ -316,28 +320,34 @@ fn cipher_block(input: [u8; 16], key_schedule: Vec<[[u8; 4]; 4]>, rounds: usize)
 }
 
 fn inv_cipher_block(input: [u8; 16], key_schedule: Vec<[[u8; 4]; 4]>, rounds: usize) -> [u8; 16] {
-    let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
-    state = input_to_state(input);
+    //let mut state: [[u8; 4]; 4] = [[0; 4]; 4];    
+    let mut state: [[u8; 4]; 4] = input_to_state(input);
     //let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
     //key_schedule = key_expansion(key, 4);
 
-    state = add_round_key(state, key_schedule[10]);
+    //println!("round_key:\n{:#X?}", key_schedule[rounds]);
+    state = add_round_key(state, key_schedule[rounds]);
+
 
     //println!("round: 0");
     //println!("state:\n{:#X?}", state);
     for round in 1..rounds {
-        state = inv_shift_rows(state);
-        state = inv_sub_bytes(state);
-        state = add_round_key(state,key_schedule[rounds - round]);
-        state = inv_mix_columns(state);
         //println!("round:{:#?}", round);
-        //println!("state:\n{:#X?}", state);
+        state = inv_shift_rows(state);
+        //println!("state after inv_shift_rows:\n{:#X?}", state);
+        state = inv_sub_bytes(state);
+        //println!("state after inv_sub_bytes:\n{:#X?}", state);
+        state = add_round_key(state,key_schedule[rounds - round]);
+        //println!("state after add_round_key:\n{:#X?}", state);
+        state = inv_mix_columns(state);
+        //println!("state after inv_mix_columns:\n{:#X?}", state);
+        //break;
     }
 
     state = inv_shift_rows(state);
     state = inv_sub_bytes(state);
     state = add_round_key(state,key_schedule[0]);
-    //println!("round: 10");
+    //println!("round: 12");
     //println!("state:\n{:#X?}", state);
     let output: [u8; 16] = state_to_output(state);
     return output;
@@ -360,7 +370,7 @@ fn cipher(plaintext: &str, key_schedule: Vec<[[u8; 4]; 4]>, key_length: usize) -
         ciphertext[i] = cipher_block(converted_text[i], key_schedule.clone(), rounds);
     }
 
-    println!("Encrypted:{}\n", bytes_to_text(ciphertext.clone()));
+    println!("\nEncrypted:{}\n", bytes_to_text(ciphertext.clone()));
     return ciphertext;
 }
 
@@ -432,9 +442,10 @@ fn bytes_to_text(bytes_2d: Vec<[u8;16]>) -> String {
 fn main() {
     //let mut key: [u8; 16] = [0; 16];
 
-    let key_length: usize = 4;
+    let key_length: usize = 8;
     let key: Vec<u8> = generate_key(key_length);
-    
+    //let key: Vec<u8> = vec! [0; key_length * 4];
+    //println!("Key:\n{:#X?}", key);
     let mut rounds: usize = 0;
     match key_length {
         4 => rounds = 10,
@@ -442,6 +453,22 @@ fn main() {
         8 => rounds = 14,
         _ => process::exit(1),
     }
+/*
+    let mut key_schedule: Vec<[[u8; 4]; 4]> = vec! [[[0; 4]; 4]; key_length + 1];
+    key_schedule = key_expansion(key, key_length, rounds);
+
+    let input: [u8; 16] = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+
+    let mut state: [u8;16] = [0; 16];
+
+    state = cipher_block(input, key_schedule.clone(), rounds);
+    println!("Encrypted:\n{:#X?}", state);
+
+    state = inv_cipher_block(state, key_schedule.clone(), rounds);
+    println!("Decrypted:\n{:#X?}", state);
+*/
+
+    //println!("Key schedule:\n{:#X?}", key_schedule);
     //println!("Key:\n{:#X?}", key);
 
     //let plaintext: [[u8; 16]; 16] = [[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]; 16];
