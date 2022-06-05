@@ -1,20 +1,12 @@
 use ::phf::{Map, phf_map};
+use rand;
+use std::str;
+use std::process;
 
 /*
 Constants
 */
 
-const NUMBER_OF_ROUNDS: Map<&str, usize> = phf_map! {
-    "4" => 10,
-    "6" => 12,
-    "8" => 14,
-};
-
-const KEY_SCHEDULE_LENGTH: Map<&str, usize> = phf_map! {
-    "4" => 44,
-    "6" => 66,
-    "8" => 88,
-};
 
 const S_BOX: [u8; 256] = [
 //   0     1     2     3     4     5     6     7     8     9     A     B     C     D    E      F   
@@ -55,7 +47,7 @@ const INV_S_BOX: [u8; 256] = [
     0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D,
 ];
 
-const RCON: [[u8; 4]; 10] = [
+const RCON: [[u8; 4]; 14] = [
     [0x01, 0x00, 0x00, 0x00],
     [0x02, 0x00, 0x00, 0x00],
     [0x04, 0x00, 0x00, 0x00],
@@ -65,18 +57,33 @@ const RCON: [[u8; 4]; 10] = [
     [0x40, 0x00, 0x00, 0x00],
     [0x80, 0x00, 0x00, 0x00],
     [0x1B, 0x00, 0x00, 0x00],
-    [0x36, 0x00, 0x00, 0x00], 
+    [0x36, 0x00, 0x00, 0x00],
+    [0x6c, 0x00, 0x00, 0x00],
+    [0xd8, 0x00, 0x00, 0x00],
+    [0xab, 0x00, 0x00, 0x00],
+    [0x4d, 0x00, 0x00, 0x00],
 ];
 
 /*
 [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] -> [[0,1,2,3]...]
 
 */
+
 fn input_to_state(input: [u8; 16]) -> [[u8; 4]; 4] {
     let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
     for row in 0..4 { 
         for column in 0..4 {
             state[row][column] = input[4 * row + column];
+        }
+    }
+    return state;
+}
+
+fn key_to_state(key: Vec<u8>, key_length: usize) -> Vec<[u8; 4]> {
+    let mut state: Vec<[u8; 4]> = vec! [[0; 4]; key_length];
+    for row in 0..key_length { 
+        for column in 0..4 {
+            state[row][column] = key[4 * row + column];
         }
     }
     return state;
@@ -133,18 +140,18 @@ fn rot_word(mut word: [u8; 4]) -> [u8; 4] {
     return word;
 }
 
-fn key_expansion(key: [u8; 16], key_length: usize) -> [[[u8; 4]; 4]; 11] {
-    let mut key_arr: [[u8; 4]; 4] = [[0; 4]; 4];
-    key_arr = input_to_state(key);
+fn key_expansion(key: Vec<u8>, key_length: usize, rounds: usize) -> Vec<[[u8; 4]; 4]> {
+    let mut key_arr: Vec<[u8; 4]> = vec! [[0; 4]; 4];
+    key_arr = key_to_state(key, key_length);
     //println!("key array:\n{:#?}", key_arr);
-    let mut init_key_schedule: [[u8; 4]; 44] = [[0; 4]; 44]; 
-    let mut key_schedule:[[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
-    for i in 0..4 {
+    let mut init_key_schedule: Vec<[u8; 4]> = vec! [[0; 4]; 4 * (rounds + 1)]; 
+    let mut key_schedule: Vec<[[u8; 4]; 4]> = vec! [[[0; 4]; 4]; rounds + 1];
+    for i in 0..key_length {
         init_key_schedule[i] = key_arr[i];
     }
     
     let mut temp: [u8; 4];
-    for i in key_length.. 4 * (NUMBER_OF_ROUNDS["4"] + 1) {
+    for i in key_length.. 4 * (rounds + 1) {
         temp = init_key_schedule[i-1];
         
         if i % key_length == 0 {
@@ -157,14 +164,14 @@ fn key_expansion(key: [u8; 16], key_length: usize) -> [[[u8; 4]; 4]; 11] {
         init_key_schedule[i] = xor(init_key_schedule[i-key_length], temp);
     }
     //println!("44x4 key schedule:\n{:#X?}", init_key_schedule);
-    for i in 0..NUMBER_OF_ROUNDS["4"] + 1 {
+    for i in 0..rounds + 1 {
         for j in 0..4 {
             for k in 0..4 {
                 key_schedule[i][j][k] = init_key_schedule[4 * i + j][k];
             }
         }
     }
-
+    
     return key_schedule;
 }
 
@@ -278,11 +285,11 @@ fn inv_mix_columns(mut state: [[u8; 4]; 4]) -> [[u8; 4]; 4] {
     return state;
 }
 
-fn cipher_block(input: [u8; 16], key: [u8; 16], rounds: usize) -> [u8; 16] {
+fn cipher_block(input: [u8; 16], key_schedule: Vec<[[u8; 4]; 4]>, rounds: usize) -> [u8; 16] {
     let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
     state = input_to_state(input);
-    let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
-    key_schedule = key_expansion(key, 4);
+    //let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+    //key_schedule = key_expansion(key, 4);
 
     state = add_round_key(state, key_schedule[0]);
     
@@ -308,92 +315,157 @@ fn cipher_block(input: [u8; 16], key: [u8; 16], rounds: usize) -> [u8; 16] {
     return output;
 }
 
-fn inv_cipher_block(input: [u8; 16], key: [u8; 16], rounds: usize) -> [u8; 16] {
+fn inv_cipher_block(input: [u8; 16], key_schedule: Vec<[[u8; 4]; 4]>, rounds: usize) -> [u8; 16] {
     let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
     state = input_to_state(input);
-    let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
-    key_schedule = key_expansion(key, 4);
+    //let mut key_schedule: [[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+    //key_schedule = key_expansion(key, 4);
 
     state = add_round_key(state, key_schedule[10]);
 
-    println!("round: 0");
-    println!("state:\n{:#X?}", state);
+    //println!("round: 0");
+    //println!("state:\n{:#X?}", state);
     for round in 1..rounds {
         state = inv_shift_rows(state);
         state = inv_sub_bytes(state);
         state = add_round_key(state,key_schedule[rounds - round]);
         state = inv_mix_columns(state);
-        println!("round:{:#?}", round);
-        println!("state:\n{:#X?}", state);
+        //println!("round:{:#?}", round);
+        //println!("state:\n{:#X?}", state);
     }
 
     state = inv_shift_rows(state);
     state = inv_sub_bytes(state);
     state = add_round_key(state,key_schedule[0]);
-    println!("round: 10");
-    println!("state:\n{:#X?}", state);
+    //println!("round: 10");
+    //println!("state:\n{:#X?}", state);
     let output: [u8; 16] = state_to_output(state);
     return output;
 }
 
+fn cipher(plaintext: &str, key_schedule: Vec<[[u8; 4]; 4]>, key_length: usize) -> Vec<[u8; 16]> {
+    let mut rounds: usize = 0;
+    match key_length {
+        4 => rounds = 10,
+        6 => rounds = 12,
+        8 => rounds = 14,
+        _ => process::exit(1),
+    }
+    
+    let converted_text: Vec<[u8; 16]> = text_to_bytes(plaintext);
+    let mut ciphertext: Vec<[u8; 16]> = vec! [[0; 16]; converted_text.len()];
+    //println!("VECTOR LENGTH:{}", converted_text.len());
+    //println!("CONVERTED TEXT:{:#X?}", converted_text);
+    for i in 0..converted_text.len() {
+        ciphertext[i] = cipher_block(converted_text[i], key_schedule.clone(), rounds);
+    }
+
+    println!("Encrypted:{}\n", bytes_to_text(ciphertext.clone()));
+    return ciphertext;
+}
+
+fn inv_cipher(ciphertext: Vec<[u8; 16]>, key_schedule: Vec<[[u8; 4]; 4]>, key_length: usize) -> String {
+    let mut rounds: usize = 0;
+    match key_length {
+        4 => rounds = 10,
+        6 => rounds = 12,
+        8 => rounds = 14,
+        _ => process::exit(1),
+    }
+    let mut plaintext: Vec<[u8; 16]> = vec! [[0; 16]; ciphertext.len()];
+    for i in 0..ciphertext.len() {
+        plaintext[i] = inv_cipher_block(ciphertext[i], key_schedule.clone(), rounds);
+    }
+    let text = bytes_to_text(plaintext);
+    return text;
+
+}
+
+fn generate_key(key_length: usize) -> Vec<u8> {
+    let mut key: Vec<u8> = vec! [0; key_length * 4];
+    for i in 0..key_length * 4 {
+        key[i] = rand::random();
+    }
+    return key;
+}
+
+fn text_to_bytes(text: &str) -> Vec<[u8;16]> {
+    let bytes: &[u8] = text.as_bytes();
+    let length_floor: usize = bytes.len();
+    let mut length: usize = 0;
+    if length_floor % 16 == 0 {
+        length = length_floor / 16;
+    }
+    else {
+        length = length_floor / 16 + 1;
+    }
+
+    let mut bytes_2d: Vec<[u8; 16]> = vec! [[0; 16]; length];
+
+    for row in 0..length {
+        for column in 0..16 {
+            if (16 * row + column) >= length_floor {
+                break;
+            }
+            bytes_2d[row][column] = bytes[16 * row + column];
+        }
+    }
+
+    return bytes_2d;
+}
+
+fn bytes_to_text(bytes_2d: Vec<[u8;16]>) -> String {
+    let length: usize = bytes_2d.len();
+
+    let mut bytes: Vec<u8> = vec! [0; length * 16];
+    for row in 0..length {
+        for column in 0..16 {
+            bytes[16 * row + column] = bytes_2d[row][column];
+        }
+    }
+
+    
+    let text = String::from_utf8_lossy(&bytes).to_string();
+    return text;
+}
 
 fn main() {
+    //let mut key: [u8; 16] = [0; 16];
+
+    let key_length: usize = 4;
+    let key: Vec<u8> = generate_key(key_length);
     
-    let input: [u8; 16] = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
-    //let mut output: [u8; 16] = [0; 16];
-    let mut state: [[u8; 4]; 4] = [[0; 4]; 4];
-    state = input_to_state(input);
-    //output = state_to_output(state);
-    println!("input:\n{:#?}", input);
-    println!("state:\n{:#?}", state);
-    let mut output: [u8; 16] = [0; 16];
+    let mut rounds: usize = 0;
+    match key_length {
+        4 => rounds = 10,
+        6 => rounds = 12,
+        8 => rounds = 14,
+        _ => process::exit(1),
+    }
+    //println!("Key:\n{:#X?}", key);
 
-    let mut key: [u8; 16] = [0; 16];
-    //let mut key_schedule:[[[u8; 4]; 4]; 11] = [[[0; 4]; 4]; 11];
+    //let plaintext: [[u8; 16]; 16] = [[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]; 16];
 
-    //key_schedule = key_expansion(key, 4);
+    //let mut array: Vec<[u8; 16]> = vec! [[0; 16]; 16];
+    //array = text_to_bytes(plaintext);
+    //println!("As bytes:\n{:#X?}", array);
+    //let backto = bytes_to_text(array);
+    //println!("Text:\n{}", backto);
+    //let converted: &[u8] = plaintext.as_bytes();
+    //println!("As bytes:\n{:#X?}", converted);
 
-    //println!("key schedule:\n{:#X?}", key_schedule);
-
-    output = cipher_block(input, key, 10);
+    let plaintext = "Sorry for what? Our daddy told us not to be ashamed of our dicks. Especially since they're such a good size and all";
+    let mut ciphertext: Vec<[u8; 16]>;
+    let mut output: String = "".to_string();
     
-    println!("Encrypted:\n{:#X?}", output);
+    let mut key_schedule: Vec<[[u8; 4]; 4]> = vec! [[[0; 4]; 4]; key_length + 1];
+    key_schedule = key_expansion(key, key_length, rounds);
     
-    output = inv_cipher_block(output, key, 10);
-    println!("Decrypted:\n{:#X?}", output);
-
-    //let a: [u8; 4] = [1, 2, 3, 4];
-    //let b: [u8; 4] = [4, 3, 2, 1];
+    ciphertext = cipher(plaintext, key_schedule.clone(), key_length);
+    //println!("Encrypted:\n{:#X?}", ciphertext);
     
-
-    //let mut key: [u8; 16] = [0x1d, 0xa1, 0xcf, 0xc8, 0x0c, 0xa4, 0xe4, 0xba, 0x9f, 0x33, 0x25, 0x55, 0xcf, 0xfa, 0x1d, 0xc2];
+    output = inv_cipher(ciphertext, key_schedule.clone(), key_length);
+    println!("Decrypted:\n{}", output);
     
-    /*
-    state = sub_bytes(state);
-    println!("SubBytes:\n{:#X?}", state);
-
-    state = shift_rows(state);
-    println!("ShiftRows:\n{:#X?}", state);
-
-    state = mix_columns(state);
-    println!("MixColumns:\n{:#X?}", state);
-
-    state = add_round_key(state, key_schedule[1]);
-    println!("Added key to state:\n{:#X?}", state);
-    */
-    /*
-    let mut xor_arr: [u8; 4] = [0; 4];
-
-    xor_arr = xor(a, b);
-    println!("XOR:\n{:#?}", xor_arr);
-    println!("output:\n{:#?}", output);
-    */
-    //cipher(input, NUMBER_OF_ROUNDS["4"]);
-    
-    /*
-    let mut word: [u8; 4] = [0x1d, 0xa1, 0xcf, 0xc8];
-    word = rot_word(word);
-    println!("word:\n{:#X?}", word);
-    */
     return;
 }

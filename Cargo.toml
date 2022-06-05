@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 phf = { version = "0.8.0", features = [ "macros" ] }
+rand = {features = ["std"]}
+
