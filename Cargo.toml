@@ -9,3 +9,8 @@ edition = "2021"
 phf = { version = "0.8.0", features = [ "macros" ] }
 rand = {features = ["std"]}
 
+
+[[bin]]
+edition = "2021"
+name = "aes"
+path = "src/main.rs"
